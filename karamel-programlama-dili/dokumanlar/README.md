@@ -1,4 +1,4 @@
-# Karamel Kılavuzlaması
+# Kılavuzlar
 
 Karamel programlama dili ile ilgili bilmeniz gereken tüm ayrıntıları bu kılavuzlardan elde edebilirsiniz. Karamel dili için kullanılan ölçünlerden biri **Yazılımca Ölçünleri**'dir.
 
