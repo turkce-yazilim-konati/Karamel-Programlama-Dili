@@ -1,18 +1,19 @@
 use std::vec::Vec;
-use std::sync::Arc;
+use std::rc::Rc;
 use std::cell::RefCell;
 use std::mem::ManuallyDrop;
 use std::fmt;
 use std::collections::HashMap;
 
 
-use crate::{buildin::class::baseclass::BasicInnerClass, types::*};
+use crate::{buildin::Class, types::*};
 use crate::compiler::function::FunctionReference;
 use crate::compiler::GetType;
 
 pub const EMPTY_OBJECT: VmObject = VmObject(QNAN | EMPTY_FLAG);
 pub const TRUE_OBJECT: VmObject  = VmObject(QNAN | TRUE_FLAG);
 pub const FALSE_OBJECT: VmObject = VmObject(QNAN | FALSE_FLAG);
+pub static EMPTY_PRIMATIVE: BramaPrimative = BramaPrimative::Empty;
 
 #[repr(C)]
 #[derive(Clone)]
@@ -22,15 +23,16 @@ pub enum BramaPrimative {
     Bool(bool),
     List(RefCell<Vec<VmObject>>),
     Dict(RefCell<HashMap<String, VmObject>>),
-    Atom(u64),
-    Text(Arc<String>),
-    Function(Arc<FunctionReference>),
-    ClassFunction(Arc<FunctionReference>, VmObject),
-    Class(Arc<BasicInnerClass>)
+    Text(Rc<String>),
+    Function(Rc<FunctionReference>, Option<VmObject>),
+    Class(Rc<dyn Class>)
 }
 
 unsafe impl Send for BramaPrimative {}
 unsafe impl Sync for BramaPrimative {}
+
+unsafe impl Send for VmObject {}
+unsafe impl Sync for VmObject {}
 
 impl BramaPrimative {
     pub fn is_true(&self) -> bool {
@@ -38,12 +40,10 @@ impl BramaPrimative {
             BramaPrimative::Text(value)       => !value.is_empty(),
             BramaPrimative::Number(value)     => *value > 0.0,
             BramaPrimative::Bool(value)       => *value,
-            BramaPrimative::Atom(_)           => true,
             BramaPrimative::List(items)       => !items.borrow().is_empty(),
             BramaPrimative::Dict(items) => !items.borrow().is_empty(),
             BramaPrimative::Empty             => false,
-            BramaPrimative::Function(_) => true,
-            BramaPrimative::ClassFunction(_, _) => true,
+            BramaPrimative::Function(_, _) => true,
             BramaPrimative::Class(_) => true
         }
     }
@@ -60,14 +60,12 @@ impl BramaPrimative {
             BramaPrimative::Number(_) => 0,
             BramaPrimative::Text(_) => 1,
             BramaPrimative::List(_) => 2,
+            BramaPrimative::Dict(_) => 3,
             
-            BramaPrimative::Empty => 6,
-            BramaPrimative::Bool(_) => 3,
-            BramaPrimative::Dict(_) => 4,
-            BramaPrimative::Atom(_) => 5,
-            BramaPrimative::Function(_) => 7,
-            BramaPrimative::ClassFunction(_, _) => 8,
-            BramaPrimative::Class(_) => 9
+            BramaPrimative::Empty => 4,
+            BramaPrimative::Bool(_) => 5,
+            BramaPrimative::Function(_, _) => 6,
+            BramaPrimative::Class(_) => 7
         }
     }
 }
@@ -78,68 +76,69 @@ impl GetType for BramaPrimative {
             BramaPrimative::Text(_)     => "yazı".to_string(),
             BramaPrimative::Number(_)   => "sayı".to_string(),
             BramaPrimative::Bool(_)     => "bool".to_string(),
-            BramaPrimative::Atom(_)     => "atom".to_string(),
             BramaPrimative::List(_)     => "liste".to_string(),
             BramaPrimative::Dict(_)     => "sözlük".to_string(),
             BramaPrimative::Empty       => "boş".to_string(),
-            BramaPrimative::Function(_) => "fonksiyon".to_string(),
-            BramaPrimative::ClassFunction(_, _) => "SınıfFonksiyonu".to_string(),
+            BramaPrimative::Function(_, _) => "fonksiyon".to_string(),
             BramaPrimative::Class(_)    => "Sınıf".to_string()
         }
     }
 }
 
 impl From<f64> for VmObject {
-    fn from(source: f64) -> Self {
-        VmObject::convert(Arc::new(BramaPrimative::Number(source)))
+    fn from(number: f64) -> Self {
+        VmObject(number.to_bits())
+    }
+}
+
+impl From<i64> for VmObject {
+    fn from(number: i64) -> Self {
+        VmObject((number as f64).to_bits())
+    }
+}
+
+impl From<usize> for VmObject {
+    fn from(number: usize) -> Self {
+        VmObject((number as f64).to_bits())
     }
 }
 
 impl From<bool> for VmObject {
     fn from(source: bool) -> Self {
-        VmObject::convert(Arc::new(BramaPrimative::Bool(source)))
+        match source {
+            true => TRUE_OBJECT,
+            false => FALSE_OBJECT,
+        }
     }
 }
 
-impl From<Arc<String>> for VmObject {
-    fn from(source: Arc<String>) -> Self {
-        VmObject::convert(Arc::new(BramaPrimative::Text(source)))
+impl From<Rc<String>> for VmObject {
+    fn from(source: Rc<String>) -> Self {
+        VmObject::native_convert(BramaPrimative::Text(source))
     }
 }
 
 impl From<String> for VmObject {
     fn from(source: String) -> Self {
-        VmObject::convert(Arc::new(BramaPrimative::Text(Arc::new(source))))
+        VmObject::native_convert(BramaPrimative::Text(Rc::new(source)))
     }
 }
 
 impl From<Vec<VmObject>> for VmObject {
     fn from(source: Vec<VmObject>) -> Self {
-        VmObject::convert(Arc::new(BramaPrimative::List(RefCell::new(source))))
+        VmObject::native_convert(BramaPrimative::List(RefCell::new(source)))
     }
 }
 
-impl From<Arc<BramaPrimative>> for VmObject {
-    fn from(source: Arc<BramaPrimative>) -> Self {
+impl From<Rc<BramaPrimative>> for VmObject {
+    fn from(source: Rc<BramaPrimative>) -> Self {
         VmObject::convert(source)
     }
 }
 
 impl From<HashMap<String, VmObject>> for VmObject {
     fn from(source: HashMap<String, VmObject>) -> Self {
-        VmObject::convert(Arc::new(BramaPrimative::Dict(RefCell::new(source))))
-    }
-}
-
-impl fmt::Display for VmObject {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:?}", &*self.deref())
-    }
-}
-
-impl fmt::Debug for VmObject {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:?}", &*self.deref())
+        VmObject::convert(Rc::new(BramaPrimative::Dict(RefCell::new(source))))
     }
 }
 
@@ -151,10 +150,8 @@ impl fmt::Debug for BramaPrimative {
             BramaPrimative::Bool(b) => write!(f, "{:?}", b),
             BramaPrimative::List(b) => write!(f, "{:?}", b.borrow()),
             BramaPrimative::Dict(b) => write!(f, "{:?}", b),
-            BramaPrimative::Atom(b) => write!(f, "{:?}", b),
             BramaPrimative::Text(b) => write!(f, "{:?}", b),
-            BramaPrimative::Function(func) => write!(f, "<Fonksiyon='{}'>", func.name),
-            BramaPrimative::ClassFunction(func, _) => write!(f, "<Fonksiyon='{}'>", func.name),
+            BramaPrimative::Function(func, _) => write!(f, "<Fonksiyon='{}'>", func.name),
             BramaPrimative::Class(class) => write!(f, "<Sınıf='{}'>", class.get_type())
         }
     }
@@ -168,12 +165,22 @@ impl fmt::Display for BramaPrimative {
             BramaPrimative::Bool(b) => write!(f, "{}", b),
             BramaPrimative::List(b) => write!(f, "{:?}", b.borrow()),
             BramaPrimative::Dict(b) => write!(f, "{:?}", b),
-            BramaPrimative::Atom(b) => write!(f, "{}", b),
             BramaPrimative::Text(b) => write!(f, "{}", b),
-            BramaPrimative::Function(func) => write!(f, "<Fonksiyon='{}'>", func.name),
-            BramaPrimative::ClassFunction(func, _) => write!(f, "<Fonksiyon='{}'>", func.name),
+            BramaPrimative::Function(func, _) => write!(f, "<Fonksiyon='{}'>", func.name),
             BramaPrimative::Class(class) => write!(f, "<Sınıf='{}'>", class.get_type())
         }
+    }
+}
+
+impl fmt::Debug for VmObject {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}", &*self.deref())
+    }
+}
+
+impl fmt::Display for VmObject {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", &*self.deref())
     }
 }
 
@@ -187,7 +194,6 @@ impl PartialEq for BramaPrimative {
     fn eq(&self, other: &Self) -> bool {
         match (self, &other) {
             (BramaPrimative::Bool(lvalue),            BramaPrimative::Bool(rvalue)) => lvalue == rvalue,
-            (BramaPrimative::Atom(lvalue),            BramaPrimative::Atom(rvalue)) => lvalue == rvalue,
             (BramaPrimative::Empty,                   BramaPrimative::Empty)        => true,
             (BramaPrimative::Number(n),               BramaPrimative::Number(m))    => if n.is_nan() && m.is_nan() { true } else { n == m },
             (BramaPrimative::Text(lvalue),            BramaPrimative::Text(rvalue)) => lvalue == rvalue,
@@ -203,7 +209,7 @@ impl PartialEq for BramaPrimative {
                 }
                 true
             },
-            (BramaPrimative::Function(l_value), BramaPrimative::Function(r_value)) => {
+            (BramaPrimative::Function(l_value, _), BramaPrimative::Function(r_value, _)) => {
                 if l_value.name != r_value.name ||
                    l_value.framework != r_value.framework ||
                    l_value.module_path != r_value.module_path {
@@ -213,12 +219,6 @@ impl PartialEq for BramaPrimative {
             },
             (BramaPrimative::Class(l_value), BramaPrimative::Class(r_value)) => {
                 l_value.get_type() == r_value.get_type()
-            },
-            (BramaPrimative::ClassFunction(l_value, l_source), BramaPrimative::ClassFunction(r_value, r_source)) => {
-                l_value.name != r_value.name ||
-                l_value.framework != r_value.framework ||
-                l_value.module_path != r_value.module_path ||
-                l_source != r_source
             },
             (BramaPrimative::Dict(l_value),           BramaPrimative::Dict(r_value))       => {
                 if (*l_value).borrow().len() != (*r_value).borrow().len() {
@@ -247,14 +247,14 @@ impl PartialEq for BramaPrimative {
 }
 
 impl VmObject {
-    pub fn convert(primative: Arc<BramaPrimative>) -> VmObject {
+    pub fn convert(primative: Rc<BramaPrimative>) -> VmObject {
         match *primative {
             BramaPrimative::Empty            => VmObject(QNAN | EMPTY_FLAG),
             BramaPrimative::Number(number)   => VmObject(number.to_bits()),
             BramaPrimative::Bool(true)       => TRUE_OBJECT,
             BramaPrimative::Bool(false)      => FALSE_OBJECT,
             _                                => {
-                VmObject(QNAN | POINTER_FLAG | (POINTER_MASK & (Arc::into_raw(primative)) as u64))
+                VmObject(QNAN | POINTER_FLAG | (POINTER_MASK & (Rc::into_raw(primative)) as u64))
             }
         }
     }
@@ -266,35 +266,64 @@ impl VmObject {
             BramaPrimative::Bool(true)       => TRUE_OBJECT,
             BramaPrimative::Bool(false)      => FALSE_OBJECT,
             _                                => {
-                VmObject(QNAN | POINTER_FLAG | (POINTER_MASK & (Arc::into_raw(Arc::new(primative))) as u64))
+                VmObject(QNAN | POINTER_FLAG | (POINTER_MASK & (Rc::into_raw(Rc::new(primative))) as u64))
             }
         }
     }
 
-    pub fn native_convert_by_ref(primative: Arc<BramaPrimative>) -> VmObject {
+    pub fn native_convert_by_ref(primative: Rc<BramaPrimative>) -> VmObject {
         match &*primative {
             BramaPrimative::Empty            => VmObject(QNAN | EMPTY_FLAG),
             BramaPrimative::Number(number)   => VmObject(number.to_bits()),
             BramaPrimative::Bool(true)       => TRUE_OBJECT,
             BramaPrimative::Bool(false)      => FALSE_OBJECT,
             _                                => {
-                VmObject(QNAN | POINTER_FLAG | (POINTER_MASK & (Arc::into_raw(primative)) as u64))
+                VmObject(QNAN | POINTER_FLAG | (POINTER_MASK & (Rc::into_raw(primative)) as u64))
             }
         }
     }
 
-    pub fn deref(&self) -> Arc<BramaPrimative> {
+    pub fn deref(&self) -> Rc<BramaPrimative> {
         match self.0 {
-            n if (n & QNAN) != QNAN       => Arc::new(BramaPrimative::Number(f64::from_bits(n))),
-            e if e == (QNAN | EMPTY_FLAG) => Arc::new(BramaPrimative::Empty),
-            f if f == (QNAN | FALSE_FLAG) => Arc::new(BramaPrimative::Bool(false)),
-            t if t == (QNAN | TRUE_FLAG)  => Arc::new(BramaPrimative::Bool(true)),
+            n if (n & QNAN) != QNAN       => Rc::new(BramaPrimative::Number(f64::from_bits(n))),
+            e if e == (QNAN | EMPTY_FLAG) => Rc::new(BramaPrimative::Empty),
+            f if f == (QNAN | FALSE_FLAG) => Rc::new(BramaPrimative::Bool(false)),
+            t if t == (QNAN | TRUE_FLAG)  => Rc::new(BramaPrimative::Bool(true)),
             p if (p & POINTER_FLAG) == POINTER_FLAG => {
                 let pointer = (self.0 & POINTER_MASK) as *mut BramaPrimative;
-                let data = unsafe { ManuallyDrop::new(Arc::from_raw(pointer)) };
-                Arc::clone(&data)
+                let data = unsafe { ManuallyDrop::new(Rc::from_raw(pointer)) };
+                Rc::clone(&data)
             },
-            _ => Arc::new(BramaPrimative::Empty)
+            _ => Rc::new(BramaPrimative::Empty)
+        }
+    }
+
+    pub fn deref_clean(&self) -> BramaPrimative {
+        match self.0 {
+            n if (n & QNAN) != QNAN       => BramaPrimative::Number(f64::from_bits(n)),
+            e if e == (QNAN | EMPTY_FLAG) => BramaPrimative::Empty,
+            f if f == (QNAN | FALSE_FLAG) => BramaPrimative::Bool(false),
+            t if t == (QNAN | TRUE_FLAG)  => BramaPrimative::Bool(true),
+            p if (p & POINTER_FLAG) == POINTER_FLAG => {
+                let pointer = (self.0 & POINTER_MASK) as *mut BramaPrimative;
+                let data = unsafe { ManuallyDrop::new(Rc::from_raw(pointer)) };
+                match &**data {
+                    BramaPrimative::Text(text) => BramaPrimative::Text(text.clone()),
+                    BramaPrimative::List(list) => BramaPrimative::List(list.clone()),
+                    BramaPrimative::Dict(dict) => BramaPrimative::Dict(dict.clone()),
+                    BramaPrimative::Function(func, base) => BramaPrimative::Function(func.clone(), *base),
+                    BramaPrimative::Class(klass) => BramaPrimative::Class(klass.clone()),
+                    _ => BramaPrimative::Empty
+                }
+            },
+            _ => BramaPrimative::Empty
+        }
+    }
+
+    pub fn as_number(&self) -> Option<f64> {
+        match (self.0 & QNAN) != QNAN {
+            true => Some(f64::from_bits(self.0)),
+            false => None
         }
     }
 }

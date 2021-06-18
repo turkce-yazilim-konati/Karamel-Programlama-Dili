@@ -1,37 +1,23 @@
 pub mod number;
 pub mod text;
 pub mod list;
+pub mod dict;
 pub mod baseclass;
+pub mod proxy;
 
-use crate::{buildin::class::baseclass::BasicInnerClass, compiler::{BramaPrimative, GetType, function::NativeCall}};
-use std::{sync::Arc, vec::Vec};
+use crate::buildin::class::baseclass::BasicInnerClass;
+use std::{rc::Rc, vec::Vec};
 use lazy_static::lazy_static;
 
-use super::ClassProperty;
+use super::Class;
 
 
-pub fn get_empty_class() -> BasicInnerClass {
+pub fn get_empty_class() -> Rc<dyn Class> {
     let mut opcode = BasicInnerClass::default();
     opcode.set_name("__NO__CLASS__");
-    opcode
+    Rc::new(opcode)
 }
 
-lazy_static! {
-    pub static ref PRIMATIVE_CLASSES: Vec<BasicInnerClass> = {
-        let mut m = Vec::new();
-        m.push(number::get_primative_class());
-        m.push(text::get_primative_class());
-        m.push(list::get_primative_class());
-        m.push(get_empty_class());
-        m.push(get_empty_class());
-        m.push(get_empty_class());
-        m.push(get_empty_class());
-        m.push(get_empty_class());
-        m.push(get_empty_class());
-        m.push(get_empty_class());
-        m
-    };
-}
 
 #[macro_export]
 macro_rules! nativecall_test {
@@ -55,7 +41,7 @@ macro_rules! nativecall_test {
 #[macro_export]
 macro_rules! primative_text {
     ($text:expr) => {
-        BramaPrimative::Text(Arc::new($text.to_string()))
+        BramaPrimative::Text(Rc::new($text.to_string()))
     };
 }
 
@@ -83,21 +69,21 @@ macro_rules! arc_text {
 #[macro_export]
 macro_rules! arc_number {
     ($number:expr) => {
-        VmObject::native_convert(BramaPrimative::Number($number as f64))
+        VmObject::from($number as f64)
     };
 }
 
 #[macro_export]
 macro_rules! arc_bool {
     ($bool:expr) => {
-        VmObject::native_convert(BramaPrimative::Bool($bool))
+        VmObject::from($bool)
     };
 }
 
 #[macro_export]
 macro_rules! arc_empty {
     () => {
-        VmObject::native_convert(BramaPrimative::Empty)
+        EMPTY_OBJECT
     };
 }
 
@@ -138,15 +124,4 @@ macro_rules! n_parameter_expected {
 #[macro_export]
 macro_rules! expected_parameter_type {
     ($function_name:expr, $expected_type:expr) => { Err((format!("'{}' sadece {} parametresini kabul ediyor", $function_name, $expected_type))) };
-}
-
-
-
-trait Class: GetType {
-    fn get_type(&self) -> String;
-    fn has_element(&self, field: Arc<BramaPrimative>) -> bool;
-    fn element_count(&self) -> usize;
-    fn add_method(&mut self, name: &String, function: NativeCall);
-    fn add_property(&mut self, name: &String, property: Arc<BramaPrimative>);
-    fn get_element(&self, field: Arc<BramaPrimative>) -> Option<&ClassProperty>;
 }

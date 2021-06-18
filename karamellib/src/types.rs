@@ -2,9 +2,8 @@ use std::vec::Vec;
 use std::str::Chars;
 use std::iter::Peekable;
 use std::result::Result;
-use std::hash::{Hash, Hasher};
-use std::collections::hash_map::DefaultHasher;
-use std::sync::Arc;
+use std::hash::Hash;
+use std::rc::Rc;
 use crate::{compiler::ast::BramaAstType, error::BramaError};
 use crate::error::BramaErrorType;
 
@@ -79,30 +78,6 @@ impl BramaKeywordType {
 }
 
 pub static KEYWORDS: &[(&str, BramaKeywordType)] = &[
-    ("true",   BramaKeywordType::True),
-    ("false",  BramaKeywordType::False),
-    ("use",    BramaKeywordType::Use),
-    ("until",  BramaKeywordType::Until),
-    ("loop",   BramaKeywordType::Loop),
-    ("if",     BramaKeywordType::If),
-    ("else",   BramaKeywordType::Else),
-    ("and",    BramaKeywordType::And),
-    ("or",     BramaKeywordType::Or),
-    ("empty",  BramaKeywordType::Empty),
-    ("not",    BramaKeywordType::Not),
-    ("equal",         BramaKeywordType::Equal),
-    ("notequal",      BramaKeywordType::NotEqual),
-    ("greater",       BramaKeywordType::GreaterThan),
-    ("greaterequal",  BramaKeywordType::GreaterEqualThan),
-    ("less",          BramaKeywordType::LessThan),
-    ("lessequal",     BramaKeywordType::LessEqualThan),
-    ("return",        BramaKeywordType::Return),
-    ("endless",       BramaKeywordType::Endless),
-    ("break",         BramaKeywordType::Break),
-    ("continue",      BramaKeywordType::Continue),
-    ("do",            BramaKeywordType::WhileStartPart),
-    ("while",         BramaKeywordType::WhileEndPart),
-
     ("doğru",  BramaKeywordType::True),
     ("dogru",  BramaKeywordType::True),
     ("yanlış", BramaKeywordType::False),
@@ -112,8 +87,7 @@ pub static KEYWORDS: &[(&str, BramaKeywordType)] = &[
     ("döngü",  BramaKeywordType::Loop),
     ("dongu",  BramaKeywordType::Loop),
     ("sonsuz", BramaKeywordType::Endless),
-    ("eğer",   BramaKeywordType::If),
-    ("eger",   BramaKeywordType::If),
+    ("ise",    BramaKeywordType::If),
     ("yoksa",   BramaKeywordType::Else),
     ("ve",     BramaKeywordType::And),
     ("veya",   BramaKeywordType::Or),
@@ -193,9 +167,9 @@ pub enum BramaOperatorType {
 pub enum BramaTokenType {
     Integer(i64),
     Double(f64),
-    Symbol(Arc<String>),
+    Symbol(Rc<String>),
     Operator(BramaOperatorType),
-    Text(Arc<String>),
+    Text(Rc<String>),
     Keyword(BramaKeywordType),
     WhiteSpace(u8),
     NewLine(u8)
@@ -346,17 +320,5 @@ impl BramaTokenType {
             BramaTokenType::Keyword(keyword) => *keyword,
             _ => BramaKeywordType::None
         }
-    }
-}
-
-pub trait StrTrait {
-    fn atom(&self) -> u64;
-}
-
-impl StrTrait for str {
-    fn atom(&self) -> u64 {
-        let mut hasher = DefaultHasher::new();
-        self.hash(&mut hasher);
-        hasher.finish()
     }
 }
