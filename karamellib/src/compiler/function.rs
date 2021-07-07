@@ -1,3 +1,4 @@
+use std::borrow::Borrow;
 use std::{iter::Skip, rc::Rc, vec::Vec};
 use std::cell::RefCell;
 use std::cell::Cell;
@@ -5,12 +6,20 @@ use std::slice::Iter;
 use std::iter::Take;
 use bitflags::bitflags;
 
+use crate::buildin::{DummyModule, Module};
+use crate::compiler::scope::Scope;
+use crate::error::KaramelErrorType;
 use crate::{inc_memory_index, dec_memory_index, get_memory_index};
 use crate::types::*;
 use crate::compiler::value::EMPTY_OBJECT;
-use crate::compiler::{BramaCompiler, Scope};
+use crate::compiler::context::KaramelCompilerContext;
 
-pub type NativeCallResult = Result<VmObject, String>;
+use super::module::OpcodeModule;
+use super::{KaramelPrimative, StaticStorage};
+use super::ast::KaramelAstType;
+use super::storage_builder::{StorageBuilder, StorageBuilderOption};
+
+pub type NativeCallResult = Result<VmObject, KaramelErrorType>;
 pub type NativeCall       = fn(FunctionParameter) -> NativeCallResult;
 pub type IndexerGetCall   = fn (VmObject, f64) -> NativeCallResult ;
 pub type IndexerSetCall   = fn (VmObject, f64, VmObject) -> NativeCallResult ;
@@ -73,25 +82,25 @@ impl<'a> Iterator for FunctionParameterIterator<'a> {
 bitflags! {
     #[derive(Default)]
     pub struct FunctionFlag: u32 {
-        const NONE     = 0b00000000;
-        const STATIC   = 0b00000001;
-        const IN_CLASS = 0b00000010;
+        const NONE         = 0b00000000;
+        const STATIC       = 0b00000001;
+        const IN_CLASS     = 0b00000010;
+        const MODULE_LEVEL = 0b00000100;
     }
 }
 
 #[derive(Clone)]
-#[derive(Default)]
 pub struct FunctionReference {
     pub callback: FunctionType,
     pub flags: FunctionFlag,
-    pub framework: String,
-    pub module_path: Vec<String>,
     pub name: String,
     pub arguments: Vec<String>,
     pub defined_storage_index: usize,
     pub storage_index: usize,
     pub opcode_location: Cell<usize>,
-    pub used_locations: RefCell<Vec<u16>>
+    pub used_locations: RefCell<Vec<u16>>,
+    pub opcode_body: Option<Rc<KaramelAstType>>,
+    pub module: Rc<dyn Module>
 }
 
 unsafe impl Send for FunctionReference {}
@@ -108,7 +117,7 @@ impl Default for FunctionType {
 }
 
 impl FunctionReference {
-    pub fn execute(&self, compiler: &mut BramaCompiler, base: Option<VmObject>) -> Result<(), String>{
+    pub fn execute(&self, compiler: &mut KaramelCompilerContext, base: Option<VmObject>) -> Result<(), KaramelErrorType>{
         unsafe {
             match self.callback {
                 FunctionType::Native(func) => FunctionReference::native_function_call(&self, func, compiler, base),
@@ -121,51 +130,56 @@ impl FunctionReference {
         let reference = FunctionReference {
             callback: FunctionType::Native(func),
             flags: flags,
-            framework: "".to_string(),
-            module_path: Vec::new(),
             name,
             arguments: Vec::new(),
             storage_index: 0,
             opcode_location: Cell::new(0),
             used_locations: RefCell::new(Vec::new()),
-            defined_storage_index: 0
+            defined_storage_index: 0,
+            opcode_body: None,
+            module: Rc::new(DummyModule::new())
         };
         Rc::new(reference)
     }
 
-    pub fn native_function(func: NativeCall, name: String, module_path: Vec<String>, framework: String) -> Rc<FunctionReference> {
+    pub fn native_function(func: NativeCall, name: String, module: Rc<dyn Module>) -> Rc<FunctionReference> {
         let reference = FunctionReference {
             callback: FunctionType::Native(func),
             flags: FunctionFlag::STATIC,
-            framework,
-            module_path,
             name,
             arguments: Vec::new(),
             storage_index: 0,
             opcode_location: Cell::new(0),
             used_locations: RefCell::new(Vec::new()),
-            defined_storage_index: 0
+            defined_storage_index: 0,
+            opcode_body: None,
+            module
         };
         Rc::new(reference)
     }
 
-    pub fn opcode_function(name: String, arguments: Vec<String>, module_path: Vec<String>, framework: String, storage_index: usize, defined_storage_index: usize) -> Rc<FunctionReference> {
-        let reference = FunctionReference {
+    pub fn opcode_function(name: String, arguments: Vec<String>, body: Rc<KaramelAstType>, module: Rc<dyn Module>, storage_index: usize, defined_storage_index: usize, module_level: bool) -> Rc<FunctionReference> {
+        let mut reference = FunctionReference {
             callback: FunctionType::Opcode,
             flags: FunctionFlag::STATIC,
-            framework,
-            module_path,
+            module,
             name,
             arguments,
             storage_index,
             defined_storage_index,
             opcode_location: Cell::new(0),
-            used_locations: RefCell::new(Vec::new())
+            used_locations: RefCell::new(Vec::new()),
+            opcode_body: Some(body.clone())
         };
+
+        if module_level {
+            reference.flags = reference.flags | FunctionFlag::MODULE_LEVEL;
+        }
+
         Rc::new(reference)
     }
 
-    unsafe fn native_function_call(reference: &FunctionReference, func: NativeCall, compiler: &mut BramaCompiler, source: Option<VmObject>) -> Result<(), String> {            
+    unsafe fn native_function_call(reference: &FunctionReference, func: NativeCall, compiler: &mut KaramelCompilerContext, source: Option<VmObject>) -> Result<(), KaramelErrorType> {            
         let total_args                 = *compiler.opcodes_ptr.offset(1);
         let call_return_assign_to_temp = *compiler.opcodes_ptr.offset(2) != 0;
         let parameter = match reference.flags {
@@ -192,7 +206,7 @@ impl FunctionReference {
         }
     }
 
-    fn opcode_function_call(reference: &FunctionReference, options: &mut BramaCompiler) -> Result<(), String> {
+    fn opcode_function_call(reference: &FunctionReference, options: &mut KaramelCompilerContext) -> Result<(), KaramelErrorType> {
         unsafe {
             let argument_size              = *options.opcodes_ptr.offset(1);
             let call_return_assign_to_temp = *options.opcodes_ptr.offset(2) != 0;
@@ -201,7 +215,11 @@ impl FunctionReference {
             options.scope_index           += 1;
 
             if argument_size != *options.opcodes_ptr {
-                return Err("Function argument error".to_string());
+                return Err(KaramelErrorType::FunctionArgumentNotMatching {
+                    function: reference.name.to_string(),
+                    expected: argument_size, 
+                    found: *options.opcodes_ptr
+                });
             }
 
             let memory_index = get_memory_index!(options) as usize;
@@ -246,4 +264,43 @@ impl FunctionReference {
         }
         Ok(())
     }
+}
+
+pub fn find_function_definition_type(module: Rc<OpcodeModule>, ast: Rc<KaramelAstType>, options: &mut KaramelCompilerContext, current_storage_index: usize, module_level: bool) -> CompilerResult {
+    match ast.borrow() {
+        KaramelAstType::FunctionDefination { name, arguments, body  } => {
+            /* Create new storage for new function */
+            let new_storage_index = options.storages.len();
+            options.storages.push(StaticStorage::new(new_storage_index));
+            options.storages[new_storage_index].set_parent_location(current_storage_index);
+
+            let function = FunctionReference::opcode_function(name.to_string(), arguments.to_vec(), body.clone(), module.clone(), new_storage_index, current_storage_index, module_level);
+            let old_function = module.functions.borrow_mut().insert(name.to_string(), function.clone());
+
+            if let Some(_) = old_function {
+                return Err(KaramelErrorType::FunctionAlreadyDefined(name.to_string()));
+            }
+            
+            find_function_definition_type(module.clone(), body.clone(), options, new_storage_index, false)?;
+
+            let storage_builder = StorageBuilder::new();
+            let mut builder_option = StorageBuilderOption { max_stack: 0 };
+            storage_builder.prepare(module.clone(), ast.borrow(), new_storage_index, options, &mut builder_option)?;
+
+            //options.storages[current_storage_index].add_static_data(name, Rc::new(KaramelPrimative::Function(function.clone(), None)));
+            options.storages[current_storage_index].add_constant(Rc::new(KaramelPrimative::Function(function.clone(), None)));
+
+            for argument in arguments {
+                options.storages[new_storage_index].add_variable(argument);
+            }
+        },
+        KaramelAstType::Block(blocks) => {
+            for block in blocks {
+                find_function_definition_type(module.clone(), block.clone(), options, current_storage_index, module_level)?;
+            }
+        },
+        _ => ()
+    }
+
+    Ok(())
 }

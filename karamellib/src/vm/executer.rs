@@ -1,5 +1,8 @@
+use std::borrow::Borrow;
 use std::cell::RefCell;
 
+use crate::compiler::context::{ExecutionPathInfo, KaramelCompilerContext};
+use crate::file::read_module_or_script;
 use crate::{types::Token, vm::interpreter::run_vm};
 use crate::parser::*;
 use crate::compiler::*;
@@ -32,6 +35,22 @@ pub struct ExecutionStatus {
     pub opcodes: Option<Vec<Token>>
 }
 
+pub fn get_execution_path<T: Borrow<ExecutionSource>>(source: T) -> ExecutionPathInfo {
+    ExecutionPathInfo {
+        path: match source.borrow() {
+            ExecutionSource::Code(_) => match std::env::current_exe() {
+                Ok(path) => match path.parent() {
+                    Some(parent_path) => parent_path.to_str().unwrap().to_string(),
+                    _ => String::from(".")
+                },
+                _ => String::from(".")
+            },
+            ExecutionSource::File(file_name) => file_name.to_string()
+        },
+        script: None
+    }
+}
+
 pub fn code_executer(parameters: ExecutionParameters) -> ExecutionStatus {
     let mut status = ExecutionStatus::default();
     match log::set_logger(&CONSOLE_LOGGER) {
@@ -45,11 +64,21 @@ pub fn code_executer(parameters: ExecutionParameters) -> ExecutionStatus {
         _ => ()
     };
 
+    let mut context: KaramelCompilerContext = KaramelCompilerContext::new();
+    context.execution_path = get_execution_path(&parameters.source);
+    log::debug!("Execution path: {}", context.execution_path.path);
+
     let data = match parameters.source {
         ExecutionSource::Code(code) => code,
-        ExecutionSource::File(_) => {
-            log::error!("Kaynak dosyasından çalıştırma desteklenmektedir.");
-            return status
+        ExecutionSource::File(filename) => {
+            match read_module_or_script(filename, &context) {
+                Ok(content) => content,
+                Err(error) => {
+                    log::error!("Program hata ile sonlandırıldı: {}", error);
+                    status.executed = false;
+                    return status
+                }
+            }
         }
     };
 
@@ -72,15 +101,13 @@ pub fn code_executer(parameters: ExecutionParameters) -> ExecutionStatus {
     };
 
     let opcode_compiler = InterpreterCompiler {};
-    let mut compiler_options: BramaCompiler = BramaCompiler::new();
-
     if parameters.return_output {
-        compiler_options.stdout = Some(RefCell::new(String::new()));
-        compiler_options.stderr = Some(RefCell::new(String::new()));
+        context.stdout = Some(RefCell::new(String::new()));
+        context.stderr = Some(RefCell::new(String::new()));
     }
 
-    let execution_status = match opcode_compiler.compile(&ast, &mut compiler_options) {
-        Ok(_) => unsafe { run_vm(&mut compiler_options) },
+    let execution_status = match opcode_compiler.compile(ast.clone(), &mut context) {
+        Ok(_) => unsafe { run_vm(&mut context) },
         Err(message) => {
             log::error!("Program hata ile sonlandırıldı: {}", message);
             return status;
@@ -104,8 +131,8 @@ pub fn code_executer(parameters: ExecutionParameters) -> ExecutionStatus {
         status.opcodes = Some(parser.tokens());
     }
 
-    status.stdout = compiler_options.stdout;
-    status.stderr = compiler_options.stderr;
+    status.stdout = context.stdout;
+    status.stderr = context.stderr;
 
     status
 }

@@ -2,13 +2,14 @@ extern crate karamellib;
 
 #[cfg(test)]
 mod tests {
-    use karamellib::error::{BramaError, BramaErrorType};
+    use karamellib::error::{KaramelError, KaramelErrorType};
 
     use crate::karamellib::types::*;
     use crate::karamellib::parser::*;
     use crate::karamellib::syntax::*;
-    use crate::karamellib::compiler::value::BramaPrimative;
-    use crate::karamellib::compiler::ast::{BramaAstType};
+    use crate::karamellib::compiler::value::KaramelPrimative;
+    use crate::karamellib::compiler::ast::{KaramelAstType};
+    use std::cell::Cell;
     use std::rc::Rc;
 
     #[warn(unused_macros)]
@@ -30,53 +31,53 @@ mod tests {
 
     test_compare!(endless_1, r#"sonsuz:
     erhan=123
-"#, Ok(BramaAstType::EndlessLoop(Box::new(BramaAstType::Assignment {
-    variable: Box::new(BramaAstType::Symbol("erhan".to_string())),
-    operator: BramaOperatorType::Assign,
-    expression: Box::new(BramaAstType::Primative(Rc::new(BramaPrimative::Number(123.0))))
-}))));
+"#, Ok(Rc::new(KaramelAstType::EndlessLoop(Box::new(KaramelAstType::Assignment {
+    variable: Box::new(KaramelAstType::Symbol("erhan".to_string())),
+    operator: KaramelOperatorType::Assign,
+    expression: Box::new(KaramelAstType::Primative(Rc::new(KaramelPrimative::Number(123.0))))
+})))));
 test_compare!(endless_2, r#"sonsuz:
     erhan=123   
-    print(1)"#, Ok(BramaAstType::EndlessLoop(Box::new(BramaAstType::Block([BramaAstType::Assignment {
-    variable: Box::new(BramaAstType::Symbol("erhan".to_string())),
-    operator: BramaOperatorType::Assign,
-    expression: Box::new(BramaAstType::Primative(Rc::new(BramaPrimative::Number(123.0))))
-},
-BramaAstType::FuncCall {
-    func_name_expression: Box::new(BramaAstType::Symbol("print".to_string())),
-    arguments: [Box::new(BramaAstType::Primative(Rc::new(BramaPrimative::Number(1.0))))].to_vec(),
-    assign_to_temp: false
-}
-].to_vec())))));
+    print(1)"#, Ok(Rc::new(KaramelAstType::EndlessLoop(Box::new(KaramelAstType::Block([Rc::new(KaramelAstType::Assignment {
+    variable: Box::new(KaramelAstType::Symbol("erhan".to_string())),
+    operator: KaramelOperatorType::Assign,
+    expression: Box::new(KaramelAstType::Primative(Rc::new(KaramelPrimative::Number(123.0))))
+}),
+Rc::new(KaramelAstType::FuncCall {
+    func_name_expression: Box::new(KaramelAstType::Symbol("print".to_string())),
+    arguments: [Box::new(KaramelAstType::Primative(Rc::new(KaramelPrimative::Number(1.0))))].to_vec(),
+    assign_to_temp: Cell::new(false)
+})
+].to_vec()))))));
 test_compare!(endless_3, r#"sonsuz
     erhan=123   
-    print(1)"#, Err(BramaError {
-        error_type: BramaErrorType::ColonMarkMissing,
+    print(1)"#, Err(KaramelError {
+        error_type: KaramelErrorType::ColonMarkMissing,
         line: 0,
         column: 6
     }));
 test_compare!(endless_4, r#"sonsuz:
     erhan=123   
     print(1)
-    kır"#, Ok(BramaAstType::EndlessLoop(Box::new(BramaAstType::Block([BramaAstType::Assignment {
-    variable: Box::new(BramaAstType::Symbol("erhan".to_string())),
-    operator: BramaOperatorType::Assign,
-    expression: Box::new(BramaAstType::Primative(Rc::new(BramaPrimative::Number(123.0))))
-},
-BramaAstType::FuncCall {
-    func_name_expression: Box::new(BramaAstType::Symbol("print".to_string())),
-    arguments: [Box::new(BramaAstType::Primative(Rc::new(BramaPrimative::Number(1.0))))].to_vec(),
-    assign_to_temp: false
-},
-BramaAstType::Break
-].to_vec())))));
-test_compare!(endless_5, r#"kır"#, Err(BramaError {
-    error_type: BramaErrorType::BreakAndContinueBelongToLoops,
+    kır"#, Ok(Rc::new(KaramelAstType::EndlessLoop(Box::new(KaramelAstType::Block([Rc::new(KaramelAstType::Assignment {
+    variable: Box::new(KaramelAstType::Symbol("erhan".to_string())),
+    operator: KaramelOperatorType::Assign,
+    expression: Box::new(KaramelAstType::Primative(Rc::new(KaramelPrimative::Number(123.0))))
+}),
+Rc::new(KaramelAstType::FuncCall {
+    func_name_expression: Box::new(KaramelAstType::Symbol("print".to_string())),
+    arguments: [Box::new(KaramelAstType::Primative(Rc::new(KaramelPrimative::Number(1.0))))].to_vec(),
+    assign_to_temp: Cell::new(false)
+}),
+Rc::new(KaramelAstType::Break)
+].to_vec()))))));
+test_compare!(endless_5, r#"kır"#, Err(KaramelError {
+    error_type: KaramelErrorType::BreakAndContinueBelongToLoops,
     column: 3,
     line: 0
 }));
-test_compare!(endless_6, r#"devam"#, Err(BramaError {
-    error_type: BramaErrorType::BreakAndContinueBelongToLoops,
+test_compare!(endless_6, r#"devam"#, Err(KaramelError {
+    error_type: KaramelErrorType::BreakAndContinueBelongToLoops,
     column: 5,
     line: 0
 }));

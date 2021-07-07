@@ -4,9 +4,12 @@ use std::cell::RefCell;
 use crate::{buildin::{Class, ClassConfig, ClassProperty}, compiler::{GetType, function::{FunctionParameter, IndexerGetCall, IndexerSetCall, NativeCall, NativeCallResult, FunctionFlag}}};
 use crate::compiler::value::EMPTY_OBJECT;
 use crate::buildin::class::baseclass::BasicInnerClass;
-use crate::compiler::value::BramaPrimative;
+use crate::compiler::value::KaramelPrimative;
+use crate::error::KaramelErrorType;
 use crate::types::VmObject;
 use crate::{n_parameter_expected, expected_parameter_type, arc_bool, primative_list};
+
+use crate::buildin::class::PRIMATIVE_CLASS_NAMES;
 
 #[derive(Default)]
 pub struct DictClass {
@@ -32,6 +35,9 @@ impl DictClass {
         dict.add_class_method("temizle", clear);
         dict.add_class_method("sil", remove);
         dict.add_class_method("anahtarlar", keys);
+
+        PRIMATIVE_CLASS_NAMES.lock().unwrap().insert(dict.get_type());
+
         dict
     }
 }
@@ -59,7 +65,7 @@ impl DictClass {
             None => match source {
                 Some(object) => {
                     match &*object.deref() {
-                        BramaPrimative::Dict(dict) => match dict.borrow().get(&*field.clone()) {
+                        KaramelPrimative::Dict(dict) => match dict.borrow().get(&*field.clone()) {
                             Some(data) => Some(ClassProperty::Field(data.deref())),
                             None => None
                         },
@@ -79,7 +85,7 @@ impl DictClass {
         self.base.add_method(name, function, flags);
     }
 
-    fn add_property(&mut self, name: &str, property: Rc<BramaPrimative>) {
+    fn add_property(&mut self, name: &str, property: Rc<KaramelPrimative>) {
         self.base.add_property(name, property);
     }
 
@@ -106,13 +112,13 @@ pub fn get_primative_class() -> Rc<dyn Class> {
 }
 
 fn get(parameter: FunctionParameter) -> NativeCallResult {
-    if let BramaPrimative::Dict(dict) = &*parameter.source().unwrap().deref() {
+    if let KaramelPrimative::Dict(dict) = &*parameter.source().unwrap().deref() {
         return match parameter.length() {
-            0 =>  n_parameter_expected!("getir", 1),
+            0 =>  n_parameter_expected!("getir".to_string(), 1),
             1 => {
                 let key = match &*parameter.iter().next().unwrap().deref() {
-                    BramaPrimative::Text(yazi) => yazi.clone(),
-                    _ => return expected_parameter_type!("anahtar", "Yazı")
+                    KaramelPrimative::Text(yazi) => yazi.clone(),
+                    _ => return expected_parameter_type!("anahtar".to_string(), "Yazı".to_string())
                 };
                 
                 return match dict.borrow().get(&*key) {
@@ -120,7 +126,7 @@ fn get(parameter: FunctionParameter) -> NativeCallResult {
                     _ => Ok(EMPTY_OBJECT)
                 };
             },
-            _ => n_parameter_expected!("getir", 1, parameter.length())
+            _ => n_parameter_expected!("getir".to_string(), 1, parameter.length())
         };
     }
     Ok(EMPTY_OBJECT)
@@ -135,28 +141,28 @@ fn add(parameter: FunctionParameter) -> NativeCallResult {
 }
 
 fn insert_or_update(parameter: FunctionParameter, function_name: &str) -> NativeCallResult {
-    if let BramaPrimative::Dict(dict) = &*parameter.source().unwrap().deref() {
+    if let KaramelPrimative::Dict(dict) = &*parameter.source().unwrap().deref() {
         return match parameter.length() {
-            0 =>  n_parameter_expected!(function_name, 2),
+            0 =>  n_parameter_expected!(function_name.to_string(), 2),
             2 => {
                 let mut iter = parameter.iter();
                 let (position_object, item) = (&*iter.next().unwrap().deref(), &*iter.next().unwrap());
 
                 let position = match position_object {
-                    BramaPrimative::Text(text) => text.clone(),
-                    _ => return expected_parameter_type!("anahtar", "Yazı")
+                    KaramelPrimative::Text(text) => text.clone(),
+                    _ => return expected_parameter_type!("anahtar".to_string(), "Yazı".to_string())
                 };
                 *dict.borrow_mut().entry((&position).to_string()).or_insert(*item) = *item;
                 Ok(EMPTY_OBJECT)
             },
-            _ => n_parameter_expected!(function_name, 2, parameter.length())
+            _ => n_parameter_expected!(function_name.to_string(), 2, parameter.length())
         };
     }
     Ok(EMPTY_OBJECT)
 }
 
 fn length(parameter: FunctionParameter) -> NativeCallResult {
-    if let BramaPrimative::Dict(dict) = &*parameter.source().unwrap().deref() {
+    if let KaramelPrimative::Dict(dict) = &*parameter.source().unwrap().deref() {
         let length = dict.borrow().len() as f64;
         return Ok(VmObject::from(length));
     }
@@ -164,20 +170,20 @@ fn length(parameter: FunctionParameter) -> NativeCallResult {
 }
 
 fn clear(parameter: FunctionParameter) -> NativeCallResult {
-    if let BramaPrimative::Dict(dict) = &*parameter.source().unwrap().deref() {
+    if let KaramelPrimative::Dict(dict) = &*parameter.source().unwrap().deref() {
         dict.borrow_mut().clear();
     }
     Ok(EMPTY_OBJECT)
 }
 
 fn remove(parameter: FunctionParameter) -> NativeCallResult {
-    if let BramaPrimative::Dict(dict) = &*parameter.source().unwrap().deref() {
+    if let KaramelPrimative::Dict(dict) = &*parameter.source().unwrap().deref() {
         return match parameter.length() {
-            0 => n_parameter_expected!("sil", 1),
+            0 => n_parameter_expected!("sil".to_string(), 1),
             1 => {
                 let key = match &*parameter.iter().next().unwrap().deref() {
-                    BramaPrimative::Text(text) => text.clone(),
-                    _ => return expected_parameter_type!("anahtar", "Yazı")
+                    KaramelPrimative::Text(text) => text.clone(),
+                    _ => return expected_parameter_type!("anahtar".to_string(), "Yazı".to_string())
                 };
                 
                 Ok(match dict.borrow_mut().remove(&key.to_string()) {
@@ -185,17 +191,17 @@ fn remove(parameter: FunctionParameter) -> NativeCallResult {
                     None => arc_bool!(false)
                 })
             },
-            _ => n_parameter_expected!("sil", 1, parameter.length())
+            _ => n_parameter_expected!("sil".to_string(), 1, parameter.length())
         };
     }
     Ok(EMPTY_OBJECT)
 }
 
 fn keys(parameter: FunctionParameter) -> NativeCallResult {
-    if let BramaPrimative::Dict(dict) = &*parameter.source().unwrap().deref() {
+    if let KaramelPrimative::Dict(dict) = &*parameter.source().unwrap().deref() {
         let mut keys = Vec::new();
         for key in dict.borrow().keys() {
-            keys.push(VmObject::native_convert(BramaPrimative::Text(Rc::new(key.to_string()))));
+            keys.push(VmObject::native_convert(KaramelPrimative::Text(Rc::new(key.to_string()))));
         }
 
         return Ok(VmObject::native_convert(primative_list!(keys)));
@@ -205,16 +211,16 @@ fn keys(parameter: FunctionParameter) -> NativeCallResult {
 }
 
 fn contains(parameter: FunctionParameter) -> NativeCallResult {
-    if let BramaPrimative::Dict(dict) = &*parameter.source().unwrap().deref() {
+    if let KaramelPrimative::Dict(dict) = &*parameter.source().unwrap().deref() {
         return match parameter.length() {
-            0 =>  n_parameter_expected!("içeriyormu", 1),
+            0 =>  n_parameter_expected!("içeriyormu".to_string(), 1),
             1 => {
                 match &*parameter.iter().next().unwrap().deref() {
-                    BramaPrimative::Text(search) =>  Ok(VmObject::from(dict.borrow().contains_key(&**search))),
-                    _ => expected_parameter_type!("içeriyormu", "Yazı")
+                    KaramelPrimative::Text(search) =>  Ok(VmObject::from(dict.borrow().contains_key(&**search))),
+                    _ => expected_parameter_type!("içeriyormu".to_string(), "Yazı".to_string())
                 }
             },
-            _ => n_parameter_expected!("içeriyormu", 1, parameter.length())
+            _ => n_parameter_expected!("içeriyormu".to_string(), 1, parameter.length())
         };
     }
     Ok(EMPTY_OBJECT)

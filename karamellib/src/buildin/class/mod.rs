@@ -6,11 +6,16 @@ pub mod baseclass;
 pub mod proxy;
 
 use crate::buildin::class::baseclass::BasicInnerClass;
-use std::{rc::Rc, vec::Vec};
-use lazy_static::lazy_static;
+use std::{collections::HashSet, rc::Rc};
+use lazy_static::*;
 
 use super::Class;
 
+use std::sync::Mutex;
+
+lazy_static! {
+    pub static ref PRIMATIVE_CLASS_NAMES: Mutex<HashSet<String>> = Mutex::new(HashSet::new());
+}
 
 pub fn get_empty_class() -> Rc<dyn Class> {
     let mut opcode = BasicInnerClass::default();
@@ -41,21 +46,21 @@ macro_rules! nativecall_test {
 #[macro_export]
 macro_rules! primative_text {
     ($text:expr) => {
-        BramaPrimative::Text(Rc::new($text.to_string()))
+        KaramelPrimative::Text(Rc::new($text.to_string()))
     };
 }
 
 #[macro_export]
 macro_rules! primative_number {
     ($number:expr) => {
-        BramaPrimative::Number($number as f64)
+        KaramelPrimative::Number($number as f64)
     };
 }
 
 #[macro_export]
 macro_rules! primative_list {
     ($list:expr) => {
-        BramaPrimative::List(RefCell::new($list))
+        KaramelPrimative::List(RefCell::new($list))
     };
 }
 
@@ -110,18 +115,29 @@ macro_rules! nativecall_test_with_params {
 macro_rules! n_parameter_check {
     ($function_name:expr, $parameter_size:expr) => {
         if parameter.length() > 1 {
-            return n_parameter_expected!("tür_bilgisi", 1);
+            return n_parameter_expected!("tür_bilgisi".to_string(), 1);
         }
     };
 }
 
 #[macro_export]
 macro_rules! n_parameter_expected {
-    ($function_name:expr, $parameter_size:expr) => { Err(format!("'{}' fonksiyonu {} parametre kabul ediyor", $function_name, $parameter_size)) };
-    ($function_name:expr, $parameter_size:expr, $parameter_found:expr) => { Err(format!("'{}' fonksiyonu {} parametre kabul ediyor, fakat {} adet parametre bulundu", $function_name, $parameter_size, $parameter_found)) };
+    ($function_name:expr, $parameter_size:expr) => { Err(KaramelErrorType::FunctionArgumentNotMatching {
+        function: $function_name,
+        expected: $parameter_size, 
+        found: 0
+    }) };
+    ($function_name:expr, $parameter_size:expr, $parameter_found:expr) => { Err(KaramelErrorType::FunctionArgumentNotMatching {
+        function: $function_name,
+        expected: $parameter_size, 
+        found: $parameter_found
+    }) };
 }
 
 #[macro_export]
 macro_rules! expected_parameter_type {
-    ($function_name:expr, $expected_type:expr) => { Err((format!("'{}' sadece {} parametresini kabul ediyor", $function_name, $expected_type))) };
+    ($function_name:expr, $expected_type:expr) => { Err(KaramelErrorType::FunctionExpectedThatParameterType {
+        function: $function_name,
+        expected: $expected_type
+    }) };
 }

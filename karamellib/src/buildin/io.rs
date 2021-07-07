@@ -1,8 +1,8 @@
-use crate::compiler::{function::{FunctionParameter, NativeCall, NativeCallResult}};
+use crate::compiler::{function::{FunctionParameter, FunctionReference, NativeCall, NativeCallResult}};
 use crate::types::{VmObject};
 use crate::compiler::value::EMPTY_OBJECT;
 use crate::buildin::{Module, Class};
-use std::collections::HashMap;
+use std::{cell::RefCell, collections::HashMap};
 use std::rc::Rc;
 use std::io;
 
@@ -11,44 +11,31 @@ use log;
 
 #[derive(Clone)]
 pub struct IoModule {
-    methods: HashMap<String, NativeCall>
+    methods: RefCell<HashMap<String, Rc<FunctionReference>>>,
+    path: Vec<String>
 }
 
 impl Module for IoModule {
-    fn new() -> IoModule where Self: Sized {
-        let mut module = IoModule {
-            methods: HashMap::new()
-        };
-        module.methods.insert("satıroku".to_string(), Self::readline as NativeCall);
-        module.methods.insert("satiroku".to_string(), Self::readline as NativeCall);
-        module.methods.insert("yaz".to_string(), Self::print as NativeCall);
-        module.methods.insert("satıryaz".to_string(), Self::printline as NativeCall);
-        module.methods.insert("satiryaz".to_string(), Self::printline as NativeCall);
-        module.methods.insert("biçimlendir".to_string(), Self::format as NativeCall);
-        module.methods.insert("bicimlendir".to_string(), Self::format as NativeCall);
-        module
-    }
-
     fn get_module_name(&self) -> String {
         "gç".to_string()
     }
 
-    fn get_method(&self, name: &str) -> Option<NativeCall> {
-        self.methods.get(name).map(|method| *method)
+    fn get_path(&self) -> &Vec<String> {
+        &self.path
+    }
+
+    fn get_method(&self, name: &str) -> Option<Rc<FunctionReference>> {
+        self.methods.borrow().get(name).map(|method| method.clone())
     }
 
     fn get_module(&self, _: &str) -> Option<Rc<dyn Module>> {
         None
     }
 
-    fn get_methods(&self) -> Vec<(&'static str, NativeCall)> {
-        [("satıroku", Self::readline as NativeCall),
-         ("satiroku", Self::readline as NativeCall),
-         ("yaz", Self::print as NativeCall),
-         ("satıryaz", Self::printline as NativeCall),
-         ("satiryaz", Self::printline as NativeCall),
-         ("biçimlendir", Self::format as NativeCall),
-         ("bicimlendir", Self::format as NativeCall)].to_vec()
+    fn get_methods(&self) -> Vec<Rc<FunctionReference>> {
+        let mut response = Vec::new();
+        self.methods.borrow().iter().for_each(|(_, reference)| response.push(reference.clone()));
+        response
     }
 
     fn get_modules(&self) -> HashMap<String, Rc<dyn Module>> {
@@ -61,6 +48,23 @@ impl Module for IoModule {
 }
 
 impl IoModule  {
+    pub fn new() -> Rc<IoModule> {
+        let module = IoModule {
+            methods: RefCell::new(HashMap::new()),
+            path: vec!["gç".to_string()]
+        };
+
+        let rc_module = Rc::new(module);
+        rc_module.methods.borrow_mut().insert("satıroku".to_string(), FunctionReference::native_function(Self::readline as NativeCall, "satıroku".to_string(), rc_module.clone()));
+        rc_module.methods.borrow_mut().insert("satiroku".to_string(), FunctionReference::native_function(Self::readline as NativeCall, "satiroku".to_string(), rc_module.clone()));
+        rc_module.methods.borrow_mut().insert("yaz".to_string(), FunctionReference::native_function(Self::print as NativeCall, "yaz".to_string(), rc_module.clone()));
+        rc_module.methods.borrow_mut().insert("satıryaz".to_string(), FunctionReference::native_function(Self::printline as NativeCall, "satıryaz".to_string(), rc_module.clone()));
+        rc_module.methods.borrow_mut().insert("satiryaz".to_string(), FunctionReference::native_function(Self::printline as NativeCall, "satiryaz".to_string(), rc_module.clone()));
+        rc_module.methods.borrow_mut().insert("biçimlendir".to_string(), FunctionReference::native_function(Self::format as NativeCall, "biçimlendir".to_string(), rc_module.clone()));
+        rc_module.methods.borrow_mut().insert("bicimlendir".to_string(), FunctionReference::native_function(Self::format as NativeCall, "bicimlendir".to_string(), rc_module.clone()));
+        rc_module.clone()
+    }
+
     pub fn readline(_: FunctionParameter) -> NativeCallResult {        
         let mut line = String::new();
         match io::stdin().read_line(&mut line) {

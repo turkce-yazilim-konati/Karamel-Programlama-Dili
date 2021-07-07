@@ -1,6 +1,6 @@
 use std::rc::Rc;
 use crate::types::*;
-use crate::error::BramaErrorType;
+use crate::error::KaramelErrorType;
 
 pub struct TextParser {
     pub tag: char
@@ -12,7 +12,7 @@ impl TokenParser for TextParser {
         return ch == self.tag;
     }
 
-    fn parse(&self, tokinizer: &mut Tokinizer) -> Result<(), BramaErrorType> {
+    fn parse(&self, tokinizer: &mut Tokinizer) -> Result<(), KaramelErrorType> {
         tokinizer.increase_index();
 
         let mut ch: char      = '\0';
@@ -27,6 +27,7 @@ impl TokenParser for TextParser {
 
             if ch == '\\' && ch_next == self.tag {
                 end += ch.len_utf8();
+                end += 1; // for tag char
                 tokinizer.increase_index();
             }
             else if ch == self.tag {
@@ -41,10 +42,10 @@ impl TokenParser for TextParser {
         }
 
         if ch != self.tag {
-            return Err(BramaErrorType::MissingStringDeliminator);
+            return Err(KaramelErrorType::MissingStringDeliminator);
         }
 
-        tokinizer.add_token(start_column - 1, BramaTokenType::Text(Rc::new(tokinizer.data[start..end].to_string())));
+        tokinizer.add_token(start_column - 1, KaramelTokenType::Text(Rc::new(tokinizer.data[start..end].to_string())));
         return Ok(());
     }
 }
@@ -77,7 +78,7 @@ fn text_parse_test_1() {
     assert_eq!(tokinizer.tokens[0].end, 15);
 
     match &tokinizer.tokens[0].token_type {
-        BramaTokenType::Text(data) => assert_eq!(&**data, "merhaba dünya"),
+        KaramelTokenType::Text(data) => assert_eq!(&**data, "merhaba dünya"),
         _ => assert_eq!(true, false)
     };
 }
@@ -109,7 +110,7 @@ fn text_parse_test_2() {
     assert_eq!(tokinizer.tokens[0].end, 15);
 
     match &tokinizer.tokens[0].token_type {
-        BramaTokenType::Text(data) => assert_eq!(&**data, "merhaba dünya"),
+        KaramelTokenType::Text(data) => assert_eq!(&**data, "merhaba dünya"),
         _ => assert_eq!(true, false)
     };
 }
