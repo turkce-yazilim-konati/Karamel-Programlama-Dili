@@ -62,43 +62,66 @@ impl VmByteDecode for u8 {
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[repr(u8)]
 pub enum VmOpCode {
-    None = 0,
-    Addition,
-    Subraction,
-    Multiply,
-    Division,
-    Module,
-    And,
-    Or,
-    Equal,
-    NotEqual,
-    GreaterThan,
-    LessThan,
-    GreaterEqualThan,
-    LessEqualThan,
+    Addition = 1,
+    Subraction = 2,
+    Multiply = 3,
+    Division = 4,
+    Module = 5,
+    And = 6,
+    Or = 7,
+    Equal = 8,
+    NotEqual = 9,
+    GreaterThan = 10,
+    GreaterEqualThan = 12,
 
-    Func,
-    InitArguments,
-    Call,
-    CallStack,
-    Return,
+    Call = 16,
+    CallStack = 17,
+    Return = 18,
 
-    Increment,
-    Decrement,
-    Not,
+    Increment = 19,
+    Decrement = 20,
+    Not = 21,
 
-    Compare,
-    Jump,
+    /// Compare previous two opcode.
+    /// If true, jump over 2 opcode and continue to execution.
+    /// If false, read next 2 opcode than calculate false jump location via high and low byte.
+    Compare = 22,
+    Jump = 23,
 
-    InitList,
-    InitDict,
+    Init = 24,
 
-    Load,
-    Store,
-    FastStore,
-    CopyToStore,
-    Dublicate,
-    GetItem,
-    SetItem,
-    Halt
+    /// Copy value from memory to stack.
+    Load = 26,
+    
+    /// Copy stack value to memory and remove value from stack.
+    Store = 27,
+
+    /// Dublicate value at memory. Take value from memory and copy to destination location. Stack not involved at this operation.
+    FastStore = 28,
+
+    /// Copy last stack value to memory and keep copied value at stack.
+    CopyToStore = 29,
+    Dublicate = 30,
+    GetItem = 31,
+    SetItem = 32,
+    Halt = 33
+}
+
+impl From<VmOpCode> for u8 {
+    fn from(opcode: VmOpCode) -> Self {
+        opcode as u8
+    }
+}
+
+impl From<&VmOpCode> for u8 {
+    fn from(opcode: &VmOpCode) -> Self {
+        *opcode as u8
+    }
+}
+
+
+impl fmt::Display for VmOpCode {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?}", self)
+    }
 }

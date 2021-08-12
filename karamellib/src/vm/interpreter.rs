@@ -8,13 +8,14 @@ use std::rc::Rc;
 use std::mem;
 use std::collections::HashMap;
 use std::io::stdout;
+use std::sync::atomic::AtomicUsize;
 use log_update::LogUpdate;
 use std::io::{self, Write};
 use std::ptr;
 use colored::*;
 use crate::buildin::ClassProperty;
 
-#[cfg(all(feature = "dumpOpcodes"))]
+#[cfg(all(feature = "NONONO"))]
 pub unsafe fn dump_opcode<W: Write>(index: usize, context: &mut KaramelCompilerContext, log_update: &mut LogUpdate<W>) {
     #[cfg(feature = "liveOpcodeView")] {
         use std::{thread, time};
@@ -30,101 +31,6 @@ pub unsafe fn dump_opcode<W: Write>(index: usize, context: &mut KaramelCompilerC
         }
     }
 
-    buffer.push_str("╔════════════════════════════════════════════╗\r\n");
-    buffer.push_str("║                    OPCODE                  ║\r\n");
-    buffer.push_str("╠═══╦══════╦═════════════════╦═══════╦═══════╣\r\n");
-    let opcode_size   = context.opcodes.len();
-    let mut opcode_index = 0;
-
-    while opcode_size > opcode_index {
-        let opcode =  mem::transmute::<u8, VmOpCode>(context.opcodes[opcode_index]);
-        match opcode {
-            VmOpCode::Division |
-            VmOpCode::Not |
-            VmOpCode::Equal |
-            VmOpCode::NotEqual |
-            VmOpCode::Dublicate |
-            VmOpCode::Increment |
-            VmOpCode::Decrement | 
-            VmOpCode::Addition | 
-            VmOpCode::Module |
-            VmOpCode::And | 
-            VmOpCode::Or |
-            VmOpCode::Subraction | 
-            VmOpCode::GreaterEqualThan |
-            VmOpCode::GreaterThan | 
-            VmOpCode::LessEqualThan | 
-            VmOpCode::LessThan | 
-            VmOpCode::GetItem | 
-            VmOpCode::SetItem |
-            VmOpCode::Multiply => {
-                let data = format!("║ {:4} ║ {:15} ║ {:^5} ║ {:^5} ║", opcode_index, format!("{:?}", opcode), "", "").to_string();
-                build_arrow(index, opcode_index, 0, &mut buffer, &data);
-            },
-
-            
-            VmOpCode::Compare => {
-                let location = opcode_index + ((context.opcodes[opcode_index+2] as u16 * 256) + context.opcodes[opcode_index+1] as u16) as usize;
-                let data = format!("║ {:4} ║ {:15} ║ {:^5?} ║ {:^5} ║", opcode_index, format!("{:?}", opcode), location, "");
-                build_arrow(index, opcode_index, 0, &mut buffer, &data);
-                opcode_index += 2;
-            },
-
-            VmOpCode::Jump => {
-                let location = ((context.opcodes[opcode_index+2] as u16 * 256) + context.opcodes[opcode_index+1] as u16) as usize;
-                let data = format!("║ {:4} ║ {:15} ║ {:^5?} ║ {:^5} ║", opcode_index, format!("{:?}", opcode), location + 1, "");
-                build_arrow(index, opcode_index, 0, &mut buffer, &data);
-                opcode_index += 2;
-            },
-
-            VmOpCode::Func => {
-                let data = format!("║ {:4} ║ {:15} ║ {:^5?} ║ {:^5} ║", opcode_index, format!("{:?}", opcode), opcode_index + 1, "");
-                build_arrow(index, opcode_index, 1, &mut buffer, &data);
-                opcode_index += 1;
-            },
-
-            VmOpCode::InitArguments |
-            VmOpCode::CopyToStore |
-            VmOpCode::Load |
-            VmOpCode::InitList |
-            VmOpCode::InitDict |
-            VmOpCode::Store => {
-                let data = format!("║ {:4} ║ {:15} ║ {:^5?} ║ {:^5} ║", opcode_index, format!("{:?}", opcode), context.opcodes[opcode_index + 1], "");
-                build_arrow(index, opcode_index, 1, &mut buffer, &data);
-                opcode_index += 1;
-            },
-
-            VmOpCode::None |
-            VmOpCode::Halt |
-            VmOpCode::Return => {
-                let data = format!("║ {:4} ║ {:15} ║ {:^5} ║ {:^5} ║", opcode_index, format!("{:?}", opcode), "", "").to_string();
-                build_arrow(index, opcode_index, 0, &mut buffer, &data);
-            },
-
-            VmOpCode::CallStack => {
-                let location = (context.opcodes[opcode_index+1] as u16) as usize;
-                let data = format!("║ {:4} ║ {:15} ║ {:^5?} ║ {:^5} ║", opcode_index, format!("{:?}", opcode), location, context.opcodes[opcode_index + 2]);
-                build_arrow(index, opcode_index, 2, &mut buffer, &data);
-                opcode_index += 2;
-            },
-
-            VmOpCode::Call => {
-                let location = (context.opcodes[opcode_index+1] as u16) as usize;
-                let data = format!("║ {:4} ║ {:15} ║ {:^5?} ║ {:^5} ║", opcode_index, format!("{:?}", opcode), location, context.opcodes[opcode_index + 2]);
-                build_arrow(index, opcode_index, 2, &mut buffer, &data);
-                opcode_index += 3;
-            },
-            
-            VmOpCode::FastStore => {
-                let data = format!("║ {:4} ║ {:15} ║ {:^5?} ║ {:^5} ║", opcode_index, format!("{:?}", opcode), context.opcodes[opcode_index + 1], context.opcodes[opcode_index + 2]);
-                build_arrow(index, opcode_index, 2, &mut buffer, &data);
-                opcode_index += 2;
-            }
-        }
-
-        opcode_index += 1;
-    }
-    buffer.push_str("╚═══╩══════╩═════════════════╩═══════╩═══════╝\r\n");
     #[cfg(not(feature = "test"))] {
         log_update.render(&format!("{}", buffer)).unwrap();
         io::stdout().flush().unwrap();
@@ -143,8 +49,9 @@ pub unsafe fn run_vm(context: &mut KaramelCompilerContext) -> Result<Vec<VmObjec
         context.storages[0].dump();
     }
     
-    #[cfg(all(feature = "dumpOpcodes"))] {
-        dump_opcode(0, context, &mut log_update);
+    #[cfg(all(feature = "dumpOpcodes"))] {    
+        let generated = context.opcode_generator.dump(&context.opcodes);
+        log_update.render(&generated[..]);
         return Ok(Vec::new());
     }
     {
@@ -327,28 +234,6 @@ pub unsafe fn run_vm(context: &mut KaramelCompilerContext) -> Result<Vec<VmObjec
                     inc_memory_index!(context, 1);
                 },
 
-                VmOpCode::LessThan => {
-                    let right = pop_raw!(context);
-                    let left  = pop_raw!(context);
-                    
-                    *(*context.current_scope).stack_ptr = match (left.as_number(), right.as_number()) {
-                        (Some(l_value),  Some(r_value))   => VmObject::from(karamel_dbg!(l_value) < karamel_dbg!(r_value)),
-                        _ => EMPTY_OBJECT
-                    };
-                    inc_memory_index!(context, 1);
-                },
-
-                VmOpCode::LessEqualThan => {
-                    let right = pop_raw!(context);
-                    let left  = pop_raw!(context);
-                    
-                    *(*context.current_scope).stack_ptr = match (left.as_number(), right.as_number()) {
-                        (Some(l_value),  Some(r_value))   => VmObject::from(karamel_dbg!(l_value) <= karamel_dbg!(r_value)),
-                        _ => EMPTY_OBJECT
-                    };
-                    inc_memory_index!(context, 1);
-                },
-
                 VmOpCode::Call => {
                     let func_location   = *context.opcodes_ptr.offset(1) as usize;
                     context.opcodes_ptr = context.opcodes_ptr.offset(1);
@@ -401,33 +286,40 @@ pub unsafe fn run_vm(context: &mut KaramelCompilerContext) -> Result<Vec<VmObjec
                     };
                 },
 
-                VmOpCode::InitList => {
-                    let total_item = *context.opcodes_ptr.offset(1);
-                    let mut list = Vec::with_capacity(total_item.into());
+                VmOpCode::Init => {
+                    let init_type = *context.opcodes_ptr.offset(1) as usize;
+                    let total_item = *context.opcodes_ptr.offset(2) as usize;
 
-                    for _ in 0..total_item {
-                        list.push(pop_raw!(context));
-                    }
+                    *(*context.current_scope).stack_ptr = match init_type {
+                        // Dict
+                        0 => {
+                            let mut dict   = HashMap::new();
+        
+                            for _ in 0..total_item {
+                                let value = pop_raw!(context);
+                                let key   = pop!(context);
+                                
+                                dict.insert(key.get_text(), value);
+                            }
+
+                            VmObject::from(dict)
+                        },
+
+                        // List
+                        1 => {
+                            let mut list = Vec::with_capacity(total_item.into());
+
+                            for _ in 0..total_item {
+                                list.push(pop_raw!(context));
+                            }
+                            
+                            VmObject::from(list)
+                        },
+                         _ => return Err(KaramelErrorType::GeneralError("Geçersiz yükleme tipi".to_string()))
+                    };
                     
-                    *(*context.current_scope).stack_ptr = VmObject::from(list);
                     inc_memory_index!(context, 1);
-                    context.opcodes_ptr = context.opcodes_ptr.offset(1);
-                },
-
-                VmOpCode::InitDict => {
-                    let total_item = *context.opcodes_ptr.offset(1) as usize;
-                    let mut dict   = HashMap::new();
-
-                    for _ in 0..total_item {
-                        let value = pop_raw!(context);
-                        let key   = pop!(context);
-                        
-                        dict.insert(key.get_text(), value);
-                    }
-                    
-                    *(*context.current_scope).stack_ptr = VmObject::from(dict);
-                    inc_memory_index!(context, 1);
-                    context.opcodes_ptr = context.opcodes_ptr.offset(1);
+                    context.opcodes_ptr = context.opcodes_ptr.offset(2);
                 },
 
                 VmOpCode::Compare => {
@@ -447,6 +339,7 @@ pub unsafe fn run_vm(context: &mut KaramelCompilerContext) -> Result<Vec<VmObjec
                     else {
                         let location = ((*context.opcodes_ptr.offset(2) as u16 * 256) + *context.opcodes_ptr.offset(1) as u16) as usize;
                         context.opcodes_ptr = context.opcodes_ptr.offset(location as isize);
+                        continue;
                     }
                 },
 
@@ -522,24 +415,11 @@ pub unsafe fn run_vm(context: &mut KaramelCompilerContext) -> Result<Vec<VmObjec
                     inc_memory_index!(context, 1);
                 },
 
-                VmOpCode::InitArguments => {
-                    let size = *context.opcodes_ptr.offset(1) as usize;
-                    let const_size = (*context.current_scope).const_size as usize;
-                    for i in 0..size {
-                        dec_memory_index!(context, 1);
-                        *(*context.current_scope).memory_ptr.offset((i + const_size) as isize) = *(*context.current_scope).stack_ptr;
-                    }
-
-                    context.opcodes_ptr = context.opcodes_ptr.offset(1);
-                },
-                VmOpCode::Func => (),
-                VmOpCode::None => (),
                 VmOpCode::Halt => {
                     break;
                 },
             }
 
-            let after = get_memory_index!(context);
             context.opcodes_ptr = context.opcodes_ptr.offset(1);
         }
 

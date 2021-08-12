@@ -183,8 +183,6 @@ impl FunctionReference {
     unsafe fn native_function_call(reference: &FunctionReference, func: NativeCall, compiler: &mut KaramelCompilerContext, source: Option<VmObject>) -> Result<(), KaramelErrorType> {            
         let total_args                 = *compiler.opcodes_ptr.offset(1);
         let call_return_assign_to_temp = *compiler.opcodes_ptr.offset(2) != 0;
-        let before = get_memory_index!(compiler);
-
         let parameter = match reference.flags {
             FunctionFlag::IN_CLASS => FunctionParameter::new(&(*compiler.current_scope).stack, source, get_memory_index!(compiler) as usize, karamel_dbg!(total_args), &compiler.stdout, &compiler.stderr),
             _ => FunctionParameter::new(&(*compiler.current_scope).stack, source, get_memory_index!(compiler) as usize, karamel_dbg!(total_args), &compiler.stdout, &compiler.stderr)
@@ -263,6 +261,12 @@ impl FunctionReference {
                 for index in 0..argument_size {
                     *scope.stack_ptr = arguments[argument_size as usize-index as usize - 1];
                     inc_memory_index!(options, 1);
+                }
+
+                let const_size = (*options.current_scope).const_size as usize;
+                for i in 0..argument_size as usize {
+                    dec_memory_index!(options, 1);
+                    *(*options.current_scope).memory_ptr.offset((i + const_size) as isize) = *(*options.current_scope).stack_ptr;
                 }
             }
         }

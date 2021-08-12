@@ -30,8 +30,8 @@ fn main() {
         None => ExecutionParameters {
             source: ExecutionSource::Code(r#"
 gç::satıryaz(123)
-gç::satıryaz(123.00000001 - 0.00000001)
-    "#.to_string()),
+        
+"#.to_string()),
             return_opcode: true,
             return_output: true
         }
